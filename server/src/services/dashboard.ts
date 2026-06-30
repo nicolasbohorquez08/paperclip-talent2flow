@@ -1,6 +1,6 @@
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, eq, gte, isNotNull, lte, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agents, approvals, companies, costEvents, heartbeatRuns, issues } from "@paperclipai/db";
+import { agents, approvals, companies, costEvents, heartbeatRuns, issues, financeEvents } from "@paperclipai/db";
 import { notFound } from "../errors.js";
 import { budgetService } from "./budgets.js";
 
@@ -158,5 +158,82 @@ export function dashboardService(db: Db) {
         runActivity: Array.from(runActivity.values()),
       };
     },
+
+    agentStats: async (companyId: string, range?: { from?: Date; to?: Date }) => {
+      // Q1: agentes + conteo de skills (extraído del jsonb runtimeConfig)
+      const agentRows = await db
+        .select({
+          agentId: agents.id,
+          agentName: agents.name,
+          agentStatus: agents.status,
+          activeSkillCount: sql<number>`
+            coalesce(
+              jsonb_array_length(
+                ${agents.runtimeConfig} -> 'paperclipSkillSync' -> 'desiredSkills'
+              ), 0
+            )
+          `,
+        })
+        .from(agents)
+        .where(eq(agents.companyId, companyId));
+
+      // Q2: créditos (dinero ahorrado) desde finance_events por agente
+      const creditConditions = [
+        eq(financeEvents.companyId, companyId),
+        eq(financeEvents.direction, "credit"),
+      ];
+      if (range?.from) creditConditions.push(gte(financeEvents.occurredAt, range.from));
+      if (range?.to) creditConditions.push(lte(financeEvents.occurredAt, range.to));
+
+      const financeRows = await db
+        .select({
+          agentId: financeEvents.agentId,
+          savedCents: sql<number>`coalesce(sum(${financeEvents.amountCents}), 0)::double precision`,
+        })
+        .from(financeEvents)
+        .where(and(...creditConditions))
+        .groupBy(financeEvents.agentId);
+
+      // Q3: horas trabajadas desde heartbeat_runs por agente (runs completados)
+      const runConditions = [
+        eq(heartbeatRuns.companyId, companyId),
+        eq(heartbeatRuns.status, "succeeded"),
+        isNotNull(heartbeatRuns.startedAt),
+        isNotNull(heartbeatRuns.finishedAt),
+      ];
+      if (range?.from) runConditions.push(gte(heartbeatRuns.createdAt, range.from));
+      if (range?.to) runConditions.push(lte(heartbeatRuns.createdAt, range.to));
+
+      const runRows = await db
+        .select({
+          agentId: heartbeatRuns.agentId,
+          workedHours: sql<number>`
+            coalesce(
+              sum(
+                extract(epoch from (${heartbeatRuns.finishedAt} - ${heartbeatRuns.startedAt}))
+              ) / 3600.0, 0
+            )::double precision
+          `,
+        })
+        .from(heartbeatRuns)
+        .where(and(...runConditions))
+        .groupBy(heartbeatRuns.agentId);
+
+      // Combinar en JS (O(n) — sin N+1)
+      const financeByAgent = new Map(financeRows.map((r) => [r.agentId, r.savedCents]));
+      const runsByAgent = new Map(runRows.map((r) => [r.agentId, r.workedHours]));
+
+      return agentRows.map((agent) => ({
+        agentId: agent.agentId,
+        agentName: agent.agentName,
+        agentStatus: agent.agentStatus,
+        activeSkillCount: Number(agent.activeSkillCount),
+        savedCents: Number(financeByAgent.get(agent.agentId) ?? 0),
+        workedHours: Number(runsByAgent.get(agent.agentId) ?? 0),
+      }));
+    },
   };
+
 }
+
+

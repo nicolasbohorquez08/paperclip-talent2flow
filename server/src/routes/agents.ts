@@ -30,6 +30,7 @@ import {
 } from "@paperclipai/shared";
 import {
   resolvePaperclipInstanceRootForAdapter,
+  computeSkillCapacityPercent,
   readPaperclipSkillSyncPreference,
   writePaperclipSkillSyncPreference,
 } from "@paperclipai/adapter-utils/server-utils";
@@ -1392,7 +1393,23 @@ export function agentRoutes(
       desiredSkillEntries,
       entries: [],
       warnings: ["This adapter does not implement skill sync yet."],
+      capacityPercent: null,
     };
+  }
+
+  function normalizeDesiredSkillSelections(
+    requestedDesiredSkills: Array<string | AgentDesiredSkillEntry> | undefined,
+  ): AgentDesiredSkillEntry[] | undefined {
+    if (!requestedDesiredSkills) return undefined;
+    const out = new Map<string, AgentDesiredSkillEntry>();
+    for (const value of requestedDesiredSkills) {
+      const entry = typeof value === "string"
+        ? { key: value.trim(), versionId: null }
+        : { key: value.key.trim(), versionId: value.versionId ?? null };
+      if (!entry.key || out.has(entry.key)) continue;
+      out.set(entry.key, entry);
+    }
+    return Array.from(out.values());
   }
 
   function normalizeDesiredSkillSelections(
@@ -1691,6 +1708,7 @@ export function agentRoutes(
     await assertCanReadConfigurations(req, agent.companyId);
 
     const adapter = findActiveServerAdapter(agent.adapterType);
+    console.log("adapter", adapter);
     if (!adapter?.listSkills) {
       const preference = readPaperclipSkillSyncPreference(
         agent.adapterConfig as Record<string, unknown>,
@@ -1718,7 +1736,8 @@ export function agentRoutes(
       adapterType: agent.adapterType,
       config: runtimeSkillConfig,
     });
-    res.json(snapshot);
+    console.log("snapshot", snapshot);
+    res.json({...snapshot, capacityPercent: computeSkillCapacityPercent(snapshot.entries)});
   });
 
   router.post(

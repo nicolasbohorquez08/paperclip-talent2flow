@@ -6937,52 +6937,6 @@ export function issueRoutes(
     res.json(released);
   });
 
-  router.post("/issues/:id/admin/force-release", async (req, res) => {
-    if (req.actor.type !== "board") {
-      res.status(403).json({ error: "Board access required" });
-      return;
-    }
-    if (!req.actor.userId) {
-      throw forbidden("Board user context required");
-    }
-
-    const id = req.params.id as string;
-    const existing = await svc.getById(id);
-    if (!existing) {
-      res.status(404).json({ error: "Issue not found" });
-      return;
-    }
-    assertCompanyAccess(req, existing.companyId);
-
-    const clearAssignee = req.query.clearAssignee === "true";
-    const result = await svc.adminForceRelease(id, { clearAssignee });
-    if (!result) {
-      res.status(404).json({ error: "Issue not found" });
-      return;
-    }
-
-    const actor = getActorInfo(req);
-    await logActivity(db, {
-      companyId: result.issue.companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      runId: actor.runId,
-      action: "issue.admin_force_release",
-      entityType: "issue",
-      entityId: result.issue.id,
-      details: {
-        issueId: result.issue.id,
-        actorUserId: req.actor.userId,
-        prevCheckoutRunId: result.previous.checkoutRunId,
-        prevExecutionRunId: result.previous.executionRunId,
-        clearAssignee,
-      },
-    });
-
-    res.json(result);
-  });
-
   router.get("/issues/:id/comments", async (req, res) => {
     const id = req.params.id as string;
     const issue = await svc.getById(id);
@@ -8480,6 +8434,25 @@ export function issueRoutes(
     });
 
     res.json({ ok: true });
+  });
+
+  router.get("/issues/:id/progress", async (req, res) => {
+    const rawId = req.params.id as string;
+    
+    // Soporte para identifier (PROJ-42) igual que el resto del sistema
+    const issue = /^[A-Z]+-\d+$/i.test(rawId)
+      ? await svc.getByIdentifier(rawId)
+      : await svc.getById(rawId);
+  
+    if (!issue) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+  
+    assertCompanyAccess(req, issue.companyId);
+  
+    const progress = await svc.getProgress(issue.id);
+    res.json(progress);
   });
 
   return router;

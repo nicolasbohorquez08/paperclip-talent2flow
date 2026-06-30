@@ -450,6 +450,53 @@ function decodeDatabaseTextPreview(value: string | null | undefined, maxChars: n
   return truncateByCodePoint(Buffer.from(value, "base64").toString("utf8"), maxChars);
 }
 
+function resolvePhase(status: string, activeRun: { status?: string } | null) {
+  if (status === "done") return "done";
+  if (status === "cancelled") return "cancelled";
+  if (status === "blocked") return "blocked";
+  if (status === "in_review") return "reviewing";
+  if (status === "in_progress") {
+    return activeRun?.status === "running" ? "executing" : "pending";
+  }
+  return "pending";
+}
+
+function buildProgressResult(
+  issue: { id: string; identifier: string | null; status: string },
+  percentage: number | null,
+  phase: string,
+  children: { status: string }[],
+  activeRun: { id: string; livenessState: string | null; nextAction: string | null; continuationAttempt: number; startedAt: Date | null } | null,
+  lifecycleContribution: number,
+  childrenContribution: number,
+  stagesContribution: number,
+) {
+  const totalChildren = children.length;
+  const completedChildren = children.filter(c => c.status === "done").length;
+  const cancelledChildren = children.filter(c => c.status === "cancelled").length;
+
+  return {
+    issueId: issue.id,
+    identifier: issue.identifier ?? null,
+    status: issue.status,
+    percentage,
+    phase,
+    breakdown: {
+      lifecycle: { contribution: lifecycleContribution, statusBasePercent: lifecycleContribution, activeRunBonus: 0 },
+      children: { contribution: childrenContribution, total: totalChildren, completed: completedChildren, cancelled: cancelledChildren, activeRatio: 0 },
+      stages: { contribution: stagesContribution, total: 0, completed: 0 },
+    },
+    activeRun: activeRun ? {
+      runId: activeRun.id,
+      livenessState: activeRun.livenessState ?? null,
+      nextAction: activeRun.nextAction ?? null,
+      continuationAttempt: activeRun.continuationAttempt ?? 0,
+      startedAt: activeRun.startedAt?.toISOString() ?? null,
+    } : null,
+    computedAt: new Date().toISOString(),
+  };
+}
+
 function appendAcceptanceCriteriaToDescription(description: string | null | undefined, acceptanceCriteria: string[] | undefined) {
   const criteria = (acceptanceCriteria ?? []).map((item) => item.trim()).filter(Boolean);
   if (criteria.length === 0) return description ?? null;
@@ -5923,51 +5970,6 @@ export function issueService(db: Db) {
         return enriched;
       }),
 
-    adminForceRelease: async (id: string, options: { clearAssignee?: boolean } = {}) =>
-      db.transaction(async (tx) => {
-        await tx.execute(
-          sql`select ${issues.id} from ${issues} where ${issues.id} = ${id} for update`,
-        );
-        const existing = await tx
-          .select({
-            id: issues.id,
-            checkoutRunId: issues.checkoutRunId,
-            executionRunId: issues.executionRunId,
-          })
-          .from(issues)
-          .where(eq(issues.id, id))
-          .then((rows) => rows[0] ?? null);
-        if (!existing) return null;
-
-        const patch: Partial<typeof issues.$inferInsert> = {
-          checkoutRunId: null,
-          executionRunId: null,
-          executionAgentNameKey: null,
-          executionLockedAt: null,
-          updatedAt: new Date(),
-        };
-        if (options.clearAssignee) {
-          patch.assigneeAgentId = null;
-        }
-
-        const updated = await tx
-          .update(issues)
-          .set(patch)
-          .where(eq(issues.id, id))
-          .returning()
-          .then((rows) => rows[0] ?? null);
-        if (!updated) return null;
-
-        const [enriched] = await withIssueLabels(tx, [updated]);
-        return {
-          issue: enriched,
-          previous: {
-            checkoutRunId: existing.checkoutRunId,
-            executionRunId: existing.executionRunId,
-          },
-        };
-      }),
-
     listLabels: (companyId: string) =>
       db.select().from(labels).where(eq(labels.companyId, companyId)).orderBy(asc(labels.name), asc(labels.id)),
 
@@ -6569,5 +6571,145 @@ export function issueService(db: Db) {
         goal: a.goalId ? goalMap.get(a.goalId) ?? null : null,
       }));
     },
+
+    getProgress: async (issueId: string) => {
+      // 1. Cargar el issue base
+      const issue = await getIssueByUuid(issueId);
+      if (!issue) throw notFound("Issue not found");
+    
+      // 2. Cargar hijos directos (solo status y id)
+      const children = await db
+        .select({ id: issues.id, status: issues.status })
+        .from(issues)
+        .where(and(
+          eq(issues.companyId, issue.companyId),
+          eq(issues.parentId, issue.id),
+        ));
+    
+      // 3. Cargar run activo (executionRunId)
+      let activeRun = null;
+      if (issue.executionRunId) {
+        activeRun = await db
+          .select({
+            id: heartbeatRuns.id,
+            status: heartbeatRuns.status,
+            livenessState: heartbeatRuns.livenessState,
+            nextAction: heartbeatRuns.nextAction,
+            continuationAttempt: heartbeatRuns.continuationAttempt,
+            startedAt: heartbeatRuns.startedAt,
+          })
+          .from(heartbeatRuns)
+          .where(eq(heartbeatRuns.id, issue.executionRunId))
+          .then((rows) => rows[0] ?? null);
+      }
+    
+      // 4. Calcular statusBasePercent
+      const STATUS_PERCENT: Record<string, number> = {
+        backlog: 0, todo: 5, in_progress: 40,
+        in_review: 75, done: 100, blocked: -1, cancelled: -1,
+      };
+    
+      const statusBase = STATUS_PERCENT[issue.status] ?? 0;
+    
+      // Casos terminales
+      if (issue.status === "cancelled") {
+        return buildProgressResult(issue, null, "cancelled", children, activeRun, 0, 0, 0);
+      }
+      if (issue.status === "done") {
+        return buildProgressResult(issue, 100, "done", children, activeRun, 100, 0, 0);
+      }
+    
+      // 5. Bonus por run activo (solo en in_progress)
+      let activeRunBonus = 0;
+      if (issue.status === "in_progress" && activeRun?.status === "running") {
+        if (activeRun.livenessState === "healthy" || activeRun.nextAction) {
+          activeRunBonus = 5;
+        }
+        // Bonus adicional por continuationAttempt (agente iterando, señal de progreso real)
+        activeRunBonus += Math.min((activeRun.continuationAttempt ?? 0) * 2, 15);
+      }
+      const lifecycleRaw = issue.status === "in_progress"
+        ? Math.min(statusBase + activeRunBonus, 70)  // cap pre-review
+        : statusBase;
+    
+      // 6. Progreso por hijos
+      const totalChildren = children.length;
+      const completedChildren = children.filter(c => c.status === "done").length;
+      const cancelledChildren = children.filter(c => c.status === "cancelled").length;
+      const effectiveChildren = totalChildren - cancelledChildren;
+      const childrenRatio = effectiveChildren > 0 ? completedChildren / effectiveChildren : 0;
+    
+      // 7. Progreso por execution stages (policy)
+      const executionState = issue.executionState as {
+        completedStageIds?: string[];
+      } | null;
+      const executionPolicy = issue.executionPolicy as {
+        stages?: { id?: string }[];
+      } | null;
+      const totalStages = executionPolicy?.stages?.length ?? 0;
+      const completedStages = executionState?.completedStageIds?.length ?? 0;
+      const stagesRatio = totalStages > 0 ? completedStages / totalStages : 0;
+    
+      // 8. Pesos dinámicos
+      const hasChildren = effectiveChildren > 0;
+      const hasStages = totalStages > 0;
+    
+      let wLifecycle: number, wChildren: number, wStages: number;
+      if (hasChildren && hasStages) {
+        [wLifecycle, wChildren, wStages] = [0.40, 0.30, 0.30];
+      } else if (hasChildren) {
+        [wLifecycle, wChildren, wStages] = [0.50, 0.35, 0.15];
+      } else if (hasStages) {
+        [wLifecycle, wChildren, wStages] = [0.55, 0.00, 0.45];
+      } else {
+        [wLifecycle, wChildren, wStages] = [1.00, 0.00, 0.00];
+      }
+    
+      // 9. Cómputo final
+      const contribution_lifecycle = lifecycleRaw * wLifecycle;
+      const contribution_children = childrenRatio * 100 * wChildren;
+      const contribution_stages = stagesRatio * 100 * wStages;
+      const percentage = Math.round(
+        contribution_lifecycle + contribution_children + contribution_stages
+      );
+    
+      // 10. Fase semántica
+      const phase = resolvePhase(issue.status, activeRun);
+    
+      return {
+        issueId: issue.id,
+        identifier: issue.identifier ?? null,
+        status: issue.status,
+        percentage: Math.min(Math.max(percentage, 0), 99), // 100 solo en done
+        phase,
+        breakdown: {
+          lifecycle: {
+            contribution: Math.round(contribution_lifecycle),
+            statusBasePercent: lifecycleRaw,
+            activeRunBonus,
+          },
+          children: {
+            contribution: Math.round(contribution_children),
+            total: totalChildren,
+            completed: completedChildren,
+            cancelled: cancelledChildren,
+            activeRatio: childrenRatio,
+          },
+          stages: {
+            contribution: Math.round(contribution_stages),
+            total: totalStages,
+            completed: completedStages,
+          },
+        },
+        activeRun: activeRun ? {
+          runId: activeRun.id,
+          livenessState: activeRun.livenessState ?? null,
+          nextAction: activeRun.nextAction ?? null,
+          continuationAttempt: activeRun.continuationAttempt ?? 0,
+          startedAt: activeRun.startedAt?.toISOString() ?? null,
+        } : null,
+        computedAt: new Date().toISOString(),
+      };
+    }
   };
 }

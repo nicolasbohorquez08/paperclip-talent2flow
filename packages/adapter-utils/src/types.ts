@@ -193,6 +193,7 @@ export type AdapterSkillOrigin =
 
 export interface AdapterSkillEntry {
   key: string;
+  name?: string | null; 
   runtimeName: string | null;
   versionId?: string | null;
   currentVersionId?: string | null;

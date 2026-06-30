@@ -20,6 +20,7 @@ export interface AgentDesiredSkillEntry {
 
 export interface AgentSkillEntry {
   key: string;
+  name?: string | null; 
   runtimeName: string | null;
   versionId?: string | null;
   currentVersionId?: string | null;
@@ -43,6 +44,7 @@ export interface AgentSkillSnapshot {
   desiredSkillEntries?: AgentDesiredSkillEntry[];
   entries: AgentSkillEntry[];
   warnings: string[];
+  capacityPercent: number | null;
 }
 
 export interface AgentSkillSyncRequest {

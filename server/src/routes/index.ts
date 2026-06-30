@@ -3,6 +3,7 @@ export { companyRoutes } from "./companies.js";
 export { companySkillRoutes } from "./company-skills.js";
 export { teamsCatalogRoutes } from "./teams-catalog.js";
 export { agentRoutes } from "./agents.js";
+export { chatRoutes } from "./chats.js";
 export { projectRoutes } from "./projects.js";
 export { issueRoutes } from "./issues.js";
 export { issueTreeControlRoutes } from "./issue-tree-control.js";

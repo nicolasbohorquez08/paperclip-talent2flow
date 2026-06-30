@@ -12,7 +12,6 @@ import {
   environments,
   executionWorkspaces,
   goals,
-  heartbeatRuns,
   instanceSettings,
   issueComments,
   issueInboxArchives,

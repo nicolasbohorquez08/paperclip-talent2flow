@@ -448,6 +448,26 @@ export {
 } from "./goal.js";
 
 export {
+  GEMINI_MODELS,
+  DEFAULT_GEMINI_MODEL,
+  MAX_CHAT_HISTORY_MESSAGES,
+  chatMessageRoleSchema,
+  chatMessageSchema,
+  upsertAgentChatConfigSchema,
+  createChatSchema,
+  updateChatSchema,
+  listChatsQuerySchema,
+  chatCompletionRequestSchema,
+  appendChatMessageSchema,
+  type UpsertAgentChatConfig,
+  type CreateChat,
+  type UpdateChat,
+  type ListChatsQuery,
+  type ChatCompletionRequest,
+  type AppendChatMessage, 
+} from "./chat.js";
+
+export {
   createApprovalSchema,
   resolveApprovalSchema,
   requestApprovalRevisionSchema,

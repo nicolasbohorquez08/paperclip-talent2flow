@@ -4165,6 +4165,7 @@ export function companySkillService(db: Db) {
 
       out.push({
         key: skill.key,
+        name: skill.name,
         runtimeName: buildSkillRuntimeName(skill.key, skill.slug),
         source: sourceResolution.source,
         versionId: options.versionSelections?.get(skill.key) ?? null,

@@ -990,8 +990,46 @@ export const upsertIssueDocumentSchema = z.object({
   baseRevisionId: z.string().uuid().nullable().optional(),
 });
 
+export const issueProgressBreakdownSchema = z.object({
+  lifecycle: z.object({
+    contribution: z.number(),
+    statusBasePercent: z.number(),
+    activeRunBonus: z.number(),
+  }),
+  children: z.object({
+    contribution: z.number(),
+    total: z.number(),
+    completed: z.number(),
+    cancelled: z.number(),
+    activeRatio: z.number(),
+  }),
+  stages: z.object({
+    contribution: z.number(),
+    total: z.number(),
+    completed: z.number(),
+  }),
+});
+
+export const issueProgressSchema = z.object({
+  issueId: z.string().uuid(),
+  identifier: z.string().nullable(),
+  status: z.enum(ISSUE_STATUSES),
+  percentage: z.number().min(0).max(100).nullable(), // null = cancelled
+  phase: z.enum(["pending", "executing", "reviewing", "done", "cancelled", "blocked"]),
+  breakdown: issueProgressBreakdownSchema,
+  activeRun: z.object({
+    runId: z.string().uuid(),
+    livenessState: z.string().nullable(),
+    nextAction: z.string().nullable(),
+    continuationAttempt: z.number(),
+    startedAt: z.string().datetime().nullable(),
+  }).nullable(),
+  computedAt: z.string().datetime(),
+});
+
 export const restoreIssueDocumentRevisionSchema = z.object({});
 
+export type IssueProgress = z.infer<typeof issueProgressSchema>;
 export type IssueDocumentFormat = z.infer<typeof issueDocumentFormatSchema>;
 export type UpsertIssueDocument = z.infer<typeof upsertIssueDocumentSchema>;
 export type RestoreIssueDocumentRevision = z.infer<typeof restoreIssueDocumentRevisionSchema>;

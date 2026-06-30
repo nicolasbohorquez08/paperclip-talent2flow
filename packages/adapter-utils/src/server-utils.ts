@@ -189,6 +189,7 @@ export type PaperclipWakeTaskWatchdogContext = {
 
 export interface PaperclipSkillEntry {
   key: string;
+  name?: string | null; 
   runtimeName: string;
   source: string;
   versionId?: string | null;
@@ -2238,6 +2239,7 @@ export function buildPersistentSkillSnapshot(
 
     entries.push({
       key: available.key,
+      name: available.name,
       runtimeName: available.runtimeName,
       versionId: available.versionId ?? null,
       currentVersionId: available.currentVersionId ?? null,
@@ -2436,6 +2438,14 @@ export function resolvePaperclipDesiredSkillNames(
     .map((reference) => canonicalizeDesiredPaperclipSkillReference(reference, availableEntries))
     .filter(Boolean);
   return Array.from(new Set(desiredSkills));
+}
+
+export function computeSkillCapacityPercent(
+  entries: AdapterSkillEntry[],
+): number | null {
+  if (entries.length === 0) return null;
+  const enabled = entries.filter((e) => e.desired).length;
+  return Math.round((enabled / entries.length) * 100);
 }
 
 export function writePaperclipSkillSyncPreference(

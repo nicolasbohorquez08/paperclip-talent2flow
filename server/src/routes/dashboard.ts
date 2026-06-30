@@ -2,6 +2,7 @@ import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import { dashboardService } from "../services/dashboard.js";
 import { assertCompanyAccess } from "./authz.js";
+import { parseCostDateRange } from "./costs.js";
 
 export function dashboardRoutes(db: Db) {
   const router = Router();
@@ -12,6 +13,14 @@ export function dashboardRoutes(db: Db) {
     assertCompanyAccess(req, companyId);
     const summary = await svc.summary(companyId);
     res.json(summary);
+  });
+
+  router.get("/companies/:companyId/dashboard/agents-stats", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const range = parseCostDateRange(req.query);
+    const rows = await svc.agentStats(companyId, range);
+    res.json(rows);
   });
 
   return router;
