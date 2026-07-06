@@ -42,8 +42,8 @@ interface EnvironmentDescriptor {
 
 const localEnvironmentDescriptor: EnvironmentDescriptor = {
   label: "Local",
-  detail: "Paperclip host",
-  title: "Local - Paperclip host",
+  detail: "Talent2flow host",
+  title: "Local - Talent2flow host",
 };
 
 const loadingEnvironmentDescriptor: EnvironmentDescriptor = {
@@ -101,7 +101,7 @@ function describeEnvironment(
   const detail = environment.driver === "sandbox"
     ? `${getSandboxProviderLabel(environment, capabilities)} sandbox provider`
     : environment.driver === "local"
-      ? "Paperclip host"
+      ? "Talent2flow host"
       : formatEnvironmentDriver(environment.driver);
 
   return {

@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Paperclip",
-  "short_name": "Paperclip",
+  "name": "Talent2flow",
+  "short_name": "Talent2flow",
   "description": "AI-powered project management and agent coordination platform",
   "start_url": "/",
   "scope": "/",
@@ -10,6 +10,11 @@
   "theme_color": "#18181b",
   "background_color": "#18181b",
   "icons": [
+    {
+      "src": "/t2-icon.png",
+      "sizes": "any",
+      "type": "image/png"
+    },
     {
       "src": "/android-chrome-192x192.png",
       "sizes": "192x192",

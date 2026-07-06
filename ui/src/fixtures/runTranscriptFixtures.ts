@@ -44,7 +44,7 @@ export const runTranscriptFixtureEntries: TranscriptEntry[] = [
   {
     kind: "assistant",
     ts: "2026-03-11T15:21:18.851Z",
-    text: "I’m starting with the Paperclip heartbeat procedure and the repo-required docs so I can see what task is actually assigned and then work only on that scope.",
+    text: "I’m starting with the Talent2flow heartbeat procedure and the repo-required docs so I can see what task is actually assigned and then work only on that scope.",
   },
   {
     kind: "tool_call",

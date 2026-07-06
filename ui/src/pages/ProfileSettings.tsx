@@ -135,8 +135,8 @@ export function ProfileSettings() {
   const initials = deriveInitials(currentName);
   const isSavingProfile = updateMutation.isPending || uploadAvatarMutation.isPending || removeAvatarMutation.isPending;
   const uploadHint = selectedCompany
-    ? `Stored in Paperclip file storage for ${selectedCompany.name}.`
-    : "Select a company to upload an avatar into Paperclip storage.";
+    ? `Stored in Talent2flow file storage for ${selectedCompany.name}.`
+    : "Select a company to upload an avatar into Talent2flow storage.";
 
   return (
     <div className="max-w-4xl space-y-6">

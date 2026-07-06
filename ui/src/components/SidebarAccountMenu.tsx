@@ -20,8 +20,8 @@ import { ThemeToggle } from "./ThemeToggle";
 import { SidebarServerInfo } from "./SidebarServerInfo";
 
 const PROFILE_SETTINGS_PATH = "/company/settings/instance/profile";
-const DOCS_URL = "https://docs.paperclip.ing/";
-const FEEDBACK_URL = "https://paperclip.ing/feedback";
+const DOCS_URL = "https://docs.talent2flow.com/";
+const FEEDBACK_URL = "https://talent2flow.com/feedback";
 
 interface SidebarAccountMenuProps {
   deploymentMode?: DeploymentMode;
@@ -178,7 +178,7 @@ export function SidebarAccountMenu({
                 </div>
                 <p className="truncate text-sm text-muted-foreground">{secondaryLabel}</p>
                 {version ? (
-                  <p className="mt-1 text-xs text-muted-foreground">Paperclip v{version}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Talent2flow v{version}</p>
                 ) : null}
               </div>
             </div>
@@ -200,7 +200,7 @@ export function SidebarAccountMenu({
               />
               <MenuAction
                 label="Documentation"
-                description="Open Paperclip docs in a new tab."
+                description="Open Talent2flow docs in a new tab."
                 icon={BookOpen}
                 href={DOCS_URL}
                 external

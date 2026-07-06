@@ -77,7 +77,7 @@ export interface JsonSchemaNode {
   readOnly?: boolean;
   writeOnly?: boolean;
 
-  // Paperclip extensions
+  // Talent2flow extensions
   /**
    * When true, the field is hidden behind an "Advanced options" disclosure
    * in the top-level `JsonSchemaForm`. Defaults to false (essential).
@@ -672,7 +672,7 @@ const SecretField = React.memo(({
       label={label}
       description={
         description ||
-        "Pick an existing company secret, or paste a raw value (Paperclip will store it as a secret on save)."
+        "Pick an existing company secret, or paste a raw value (Talent2flow will store it as a secret on save)."
       }
       required={isRequired}
       error={error}
