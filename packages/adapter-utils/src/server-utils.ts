@@ -129,6 +129,16 @@ export const DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE = [
   "- Respect budget, pause/cancel, approval gates, and company boundaries.",
 ].join("\n");
 
+export const DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE_ASK = [
+  "You are agent {{agent.id}} ({{agent.name}}). Continue your Paperclip work.",
+  "",
+  "Execution contract:",
+  "- Take concrete action in this heartbeat. Do not stop at a plan unless explicitly requested.",
+  "- Give the issue a clear final disposition before ending: `done`, `in_review` with a real interaction path, or `blocked` with a named unblock owner and action.",
+  "- If blocked, mark it blocked and name the unblock owner and action.",
+  "- Respect budget, pause/cancel, approval gates, and company boundaries.",
+].join("\n");
+
 export const WATCHDOG_DEFAULT_MANDATE = [
   "You are running as a task watchdog, not as the original deliverable worker.",
   "Your mission is to keep the watched issue tree moving by verifying stopped work, not by trusting agent claims.",
@@ -598,6 +608,7 @@ type PaperclipWakePayload = {
   taskWatchdog: PaperclipWakeTaskWatchdogContext | null;
   interactionKind: string | null;
   interactionStatus: string | null;
+  interactionIdempotencyKey: string | null;
   annotationDeltas: PaperclipWakeAnnotationDelta[];
   childIssueSummaries: PaperclipWakeChildIssueSummary[];
   childIssueSummaryTruncated: boolean;
@@ -1135,6 +1146,7 @@ export function normalizePaperclipWakePayload(value: unknown): PaperclipWakePayl
     taskWatchdog,
     interactionKind: asString(payload.interactionKind, "").trim() || null,
     interactionStatus: asString(payload.interactionStatus, "").trim() || null,
+    interactionIdempotencyKey: asString(payload.interactionIdempotencyKey, "").trim() || null,
     childIssueSummaries,
     childIssueSummaryTruncated: asBoolean(payload.childIssueSummaryTruncated, false),
     commentIds,
@@ -1196,6 +1208,11 @@ export function renderPaperclipWakePrompt(
     }
   };
 
+  const isAskMode = normalized.issue?.workMode === "ask";
+  const executionContractLine = isAskMode
+    ? "Execution contract: take concrete action in this heartbeat. Give the issue a clear final disposition before ending: `done`, `in_review` with a real interaction path, or `blocked` with a named unblock owner and action."
+    : "Execution contract: take concrete action in this heartbeat when the issue is actionable; do not stop at a plan unless planning was requested. Leave durable progress and then give the issue a clear final disposition before ending the heartbeat: `done`, `in_review` with a real reviewer/approval/interaction path, `blocked` with first-class blockers or a named unblock owner/action, delegated follow-up issues with blockers, or `in_progress` only when a live continuation path exists. Use child issues for long or parallel delegated work instead of polling. Comments, documents, screenshots, work products, and `Remaining` bullets are evidence, not valid liveness paths by themselves.";
+
   const lines = resumedSession
       ? [
         "## Paperclip Resume Delta",
@@ -1205,7 +1222,22 @@ export function renderPaperclipWakePrompt(
         "Focus on the new wake delta below and continue the current task without restating the full heartbeat boilerplate.",
         "Fetch the API thread only when `fallbackFetchNeeded` is true or you need broader history than this batch.",
         "",
-        "Execution contract: take concrete action in this heartbeat when the issue is actionable; do not stop at a plan unless planning was requested. Leave durable progress and then give the issue a clear final disposition before ending the heartbeat: `done`, `in_review` with a real reviewer/approval/interaction path, `blocked` with first-class blockers or a named unblock owner/action, delegated follow-up issues with blockers, or `in_progress` only when a live continuation path exists. Use child issues for long or parallel delegated work instead of polling. Comments, documents, screenshots, work products, and `Remaining` bullets are evidence, not valid liveness paths by themselves.",
+        executionContractLine,
+        "",
+        `- reason: ${normalized.reason ?? "unknown"}`,
+        `- issue: ${normalized.issue?.identifier ?? normalized.issue?.id ?? "unknown"}${normalized.issue?.title ? ` ${normalized.issue.title}` : ""}`,
+        `- pending comments: ${normalized.includedCount}/${normalized.requestedCount}`,
+        `- latest comment id: ${normalized.latestCommentId ?? "unknown"}`,
+        `- fallback fetch needed: ${normalized.fallbackFetchNeeded ? "yes" : "no"}`,
+      ]
+    : isAskMode
+      ? [
+        "## Paperclip Wake Payload",
+        "",
+        "All context needed is inline below. Do NOT make any GET requests — skip directly to your curl action.",
+        "This heartbeat is scoped to the issue below. Do not switch to another issue until you have handled this wake.",
+        "",
+        executionContractLine,
         "",
         `- reason: ${normalized.reason ?? "unknown"}`,
         `- issue: ${normalized.issue?.identifier ?? normalized.issue?.id ?? "unknown"}${normalized.issue?.title ? ` ${normalized.issue.title}` : ""}`,
@@ -1222,7 +1254,7 @@ export function renderPaperclipWakePrompt(
         "Use this inline wake data first before refetching the issue thread.",
         "Only fetch the API thread when `fallbackFetchNeeded` is true or you need broader history than this batch.",
         "",
-        "Execution contract: take concrete action in this heartbeat when the issue is actionable; do not stop at a plan unless planning was requested. Leave durable progress and then give the issue a clear final disposition before ending the heartbeat: `done`, `in_review` with a real reviewer/approval/interaction path, `blocked` with first-class blockers or a named unblock owner/action, delegated follow-up issues with blockers, or `in_progress` only when a live continuation path exists. Use child issues for long or parallel delegated work instead of polling. Comments, documents, screenshots, work products, and `Remaining` bullets are evidence, not valid liveness paths by themselves.",
+        executionContractLine,
         "",
         `- reason: ${normalized.reason ?? "unknown"}`,
         `- issue: ${normalized.issue?.identifier ?? normalized.issue?.id ?? "unknown"}${normalized.issue?.title ? ` ${normalized.issue.title}` : ""}`,
@@ -1239,6 +1271,9 @@ export function renderPaperclipWakePrompt(
   }
   if (normalized.issue?.priority) {
     lines.push(`- issue priority: ${normalized.issue.priority}`);
+  }
+  if (normalized.issue?.workMode === "ask" && normalized.interactionIdempotencyKey) {
+    lines.push(`- active interaction: ${normalized.interactionIdempotencyKey}`);
   }
   if (normalized.issue?.workMode === "planning" && !normalized.taskWatchdog) {
     const hasWakeComments = normalized.comments.length > 0;

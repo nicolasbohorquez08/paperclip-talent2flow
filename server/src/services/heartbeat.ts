@@ -3745,6 +3745,27 @@ export async function buildPaperclipWakePayload(input: {
   const interactionId = readNonEmptyString(input.contextSnapshot.interactionId);
   const interactionKind = readNonEmptyString(input.contextSnapshot.interactionKind);
   const interactionStatus = readNonEmptyString(input.contextSnapshot.interactionStatus);
+  const interactionIdempotencyKey = issueSummary?.workMode === "ask"
+    ? interactionId
+      ? await input.db
+          .select({ idempotencyKey: issueThreadInteractions.idempotencyKey })
+          .from(issueThreadInteractions)
+          .where(and(eq(issueThreadInteractions.id, interactionId), eq(issueThreadInteractions.companyId, input.companyId)))
+          .then((rows) => rows[0]?.idempotencyKey ?? null)
+      : issueId
+        ? await input.db
+            .select({ idempotencyKey: issueThreadInteractions.idempotencyKey })
+            .from(issueThreadInteractions)
+            .where(and(
+              eq(issueThreadInteractions.issueId, issueId),
+              eq(issueThreadInteractions.companyId, input.companyId),
+              inArray(issueThreadInteractions.kind, ["request_confirmation", "request_checkbox_confirmation"]),
+            ))
+            .orderBy(desc(issueThreadInteractions.updatedAt))
+            .limit(1)
+            .then((rows) => rows[0]?.idempotencyKey ?? null)
+        : null
+    : null;
   const planReviewContext = issueId
     ? await buildPlanReviewContext({
       db: input.db,
@@ -3789,6 +3810,7 @@ export async function buildPaperclipWakePayload(input: {
       : null,
     interactionKind,
     interactionStatus,
+    interactionIdempotencyKey,
     checkedOutByHarness: input.contextSnapshot[PAPERCLIP_HARNESS_CHECKOUT_KEY] === true,
     dependencyBlockedInteraction: input.contextSnapshot.dependencyBlockedInteraction === true,
     treeHoldInteraction: input.contextSnapshot.treeHoldInteraction === true,
@@ -3801,7 +3823,7 @@ export async function buildPaperclipWakePayload(input: {
       : [],
     executionStage: Object.keys(executionStage).length > 0 ? executionStage : null,
     taskWatchdog: (input.contextSnapshot.taskWatchdog ?? null) as unknown,
-    continuationSummary: safeContinuationSummary
+    continuationSummary: safeContinuationSummary && !interactionIdempotencyKey
       ? {
           key: safeContinuationSummary.key,
           title: safeContinuationSummary.title,
@@ -9417,8 +9439,13 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
     const taskSession = taskKey
       ? await getTaskSession(agent.companyId, agent.id, agent.adapterType, taskKey)
       : null;
+    // Use raw JSON (not codec-decoded) so Paperclip metadata keys (__paperclipConfigFingerprint*, etc.)
+    // are preserved for fingerprint comparison. The codec only extracts adapter-specific keys and
+    // strips everything else, causing every heartbeat to report "fingerprint metadata is missing"
+    // and preventing session reuse. The actual session params for adapter resumption are decoded
+    // separately via sessionCodec.deserialize below.
     const taskSessionDecodedParams = normalizeSessionParams(
-      sessionCodec.deserialize(taskSession?.sessionParamsJson ?? null),
+      parseObject(taskSession?.sessionParamsJson ?? null),
     );
     const explicitResumeSessionParams = normalizeResumeParamsForAdapter(
       agent.adapterType,
@@ -9739,7 +9766,13 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       agentRuntimeConfig: agent.runtimeConfig,
       modelProfile: modelProfileMetadata,
       issueOverrides: issueAssigneeOverrides,
-      workspaceConfig: {
+      // For ask workMode the agent only makes API calls and never uses the workspace,
+      // so the entire workspaceConfig is irrelevant for session continuity. Multiple
+      // fields in workspaceConfig (issueConfigRevisionAt, existingExecutionWorkspace)
+      // change between run 1 (issue_assigned) and run 2 (issue_commented), causing a
+      // fingerprint mismatch and a session reset on every heartbeat. Passing null here
+      // keeps the fingerprint stable and allows Gemini sessions to resume across heartbeats.
+      workspaceConfig: issueContext?.workMode === "ask" ? null : {
         requestedMode: requestedExecutionWorkspaceMode,
         effectiveMode: effectiveExecutionWorkspaceMode,
         issueConfigRevisionAt: issueContext?.updatedAt instanceof Date

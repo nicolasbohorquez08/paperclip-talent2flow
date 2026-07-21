@@ -177,85 +177,14 @@ The array **replaces** the current set on each update — send `[]` to clear. Is
 
 ## Requesting Board Approval
 
-Use `request_board_approval` when you need the board to approve/deny a proposed action:
-
-```json
-POST /api/companies/{companyId}/approvals
-{
-  "type": "request_board_approval",
-  "requestedByAgentId": "{your-agent-id}",
-  "issueIds": ["{issue-id}"],
-  "payload": {
-    "title": "Approve monthly hosting spend",
-    "summary": "Estimated cost is $42/month for provider X.",
-    "recommendedAction": "Approve provider X and continue setup.",
-    "risks": ["Costs may increase with usage."]
-  }
-}
-```
-
-`issueIds` links the approval into the issue thread. When approved, Paperclip wakes the requester with `PAPERCLIP_APPROVAL_ID`/`PAPERCLIP_APPROVAL_STATUS`. Keep the payload concise and decision-ready.
+Use `POST /api/companies/{companyId}/approvals` with `type: "request_board_approval"`, `requestedByAgentId`, `issueIds`, and a concise `payload` (title, summary, recommendedAction, risks). `issueIds` links the approval into the issue thread. When approved, Paperclip wakes you with `PAPERCLIP_APPROVAL_ID`/`PAPERCLIP_APPROVAL_STATUS`. Full schema in `references/api-reference.md`.
 
 ## Issue-Thread Interactions
 
-Issue-thread interactions are first-class cards that render in the issue thread and capture a typed board/user response. Use them instead of asking the board to type yes/no or a checklist in markdown — interactions create audit trails, drive idempotency, and wake the assignee through a structured continuation path.
+Use issue-thread interactions instead of asking the board for yes/no in comments. Four kinds: `request_confirmation`, `request_checkbox_confirmation`, `ask_user_questions`, `suggest_tasks`. All support `continuationPolicy: wake_assignee` and `idempotencyKey`. After creating one, move the source issue to `in_review`.
 
-Four kinds are supported. Pick the smallest kind that fits the decision shape:
-
-| Kind                            | When to use                                                                                  | When **not** to use                                                                                |
-| ------------------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `request_confirmation`          | Single yes/no decision bound to a target (e.g. accept a plan revision, approve a launch).    | Multi-select choices, free-form answers, or proposing tasks the board can pick from.               |
-| `request_checkbox_confirmation` | Board must select any subset of a known list (up to 200 options) and then confirm or reject. | Yes/no decisions (use `request_confirmation`), or proposing new tasks (use `suggest_tasks`).        |
-| `ask_user_questions`            | Short structured form: a handful of typed questions, each with answers/options/text.         | Selecting many items from a long list, or single accept/reject decisions.                          |
-| `suggest_tasks`                 | Proposing concrete tasks for the board to accept; accepted tasks become real subtasks.       | Asking the board to confirm a plan or arbitrary selection. Tasks are the unit; not arbitrary ids.  |
-
-Key shared semantics:
-
-- **Continuation policy.** `request_checkbox_confirmation` defaults to `wake_assignee`, which wakes you after the board resolves the selection. `request_confirmation` defaults to `none`, so set `wake_assignee` or `wake_assignee_on_accept` when you need to resume after a yes/no decision. `none` never wakes you — only use it when you truly do not need to resume.
-- **Target binding and staleness.** `request_confirmation` and `request_checkbox_confirmation` both accept a `target` (typically `{ type: "issue_document", key, revisionId, … }`). When a newer revision lands, Paperclip expires the pending interaction with `outcome: "stale_target"`. Rebuild against the latest revision and create a fresh interaction.
-- **Supersede on user comment.** Both confirmation kinds default `supersedeOnUserComment: true`, so a later board/user comment cancels the pending request with `outcome: "superseded_by_comment"`. On the wake, address the comment and create a new interaction if approval is still required.
-- **Idempotency.** Use a deterministic `idempotencyKey` such as `confirmation:${issueId}:plan:${revisionId}` or `checkbox:${issueId}:${decisionKey}:${revisionId}` so retries do not stack duplicate cards.
-- **Source issue posture.** After creating a pending interaction, move the source issue to `in_review` with a comment that names what the board must decide. The pending interaction is the explicit waiting path.
-
-Create a `request_checkbox_confirmation` (board selects any subset, then confirms):
-
-```json
-POST /api/issues/{issueId}/interactions
-{
-  "kind": "request_checkbox_confirmation",
-  "idempotencyKey": "checkbox:{issueId}:cleanup-files:{planRevisionId}",
-  "title": "Confirm files to delete",
-  "summary": "Pick the files you want removed before I run the cleanup.",
-  "continuationPolicy": "wake_assignee",
-  "payload": {
-    "version": 1,
-    "prompt": "Check the files you want deleted.",
-    "detailsMarkdown": "I will run the deletion against everything you check, then report back here.",
-    "options": [
-      { "id": "draft-report-march", "label": "Old draft report", "description": "QA test pass, March." },
-      { "id": "tmp-export-2025", "label": "tmp/export-2025.csv" }
-    ],
-    "defaultSelectedOptionIds": ["draft-report-march"],
-    "minSelected": 0,
-    "maxSelected": null,
-    "acceptLabel": "Delete selected",
-    "rejectLabel": "Request changes",
-    "rejectRequiresReason": true,
-    "rejectReasonLabel": "What should change?",
-    "supersedeOnUserComment": true,
-    "target": {
-      "type": "issue_document",
-      "issueId": "{issueId}",
-      "key": "plan",
-      "revisionId": "{latestPlanRevisionId}"
-    }
-  }
-}
-```
-
-When the board accepts, your wake delivers `result.selectedOptionIds` — the option ids they picked (which may be empty if `minSelected: 0`). Rejection delivers `result.reason` and a `commentId`.
-
-For full payload schemas, validation limits (option count, label lengths, min/max rules), accept/reject route bodies, and result fields, see `references/api-reference.md` -> **Checkbox confirmations**.
+For full payload schemas, kinds comparison, and examples, read:
+`skills/paperclip/references/interactions.md`
 
 ## Niche Workflow Pointers
 
@@ -363,36 +292,13 @@ Submitted CTO hire request and linked it for board review.
 
 ## Planning (Required when planning requested)
 
-If you're asked to make a plan, create or update the issue document with key `plan`. Do not append plans into the issue description anymore. If you're asked for plan revisions, update that same `plan` document. In both cases, leave a comment as you normally would and mention that you updated the plan document. Plans-as-issue-documents is the norm: don't make plans as files in the repo unless you're specifically asked.
+Store plans as issue documents with key `plan` (never in the description). Use `PUT /api/issues/{issueId}/documents/plan` with the latest `baseRevisionId` (fetch first if the document already exists). Leave the issue in `in_review` when the plan needs review — not `done`.
 
-When you mention a plan or another issue document in a comment, include a direct document link using the key:
+If approval is required before implementation: update `plan`, create a `request_confirmation` interaction bound to the latest revision, then set issue to `in_review`. Wait for acceptance before creating implementation subtasks.
 
-- Plan: `/<prefix>/issues/<issue-identifier>#document-plan`
-- Generic document: `/<prefix>/issues/<issue-identifier>#document-<document-key>`
+When converting a plan to tasks, use the companion skill `paperclip-converting-plans-to-tasks`.
 
-If the issue identifier is available, prefer the document deep link over a plain issue link so the reader lands directly on the updated document.
-
-If you're asked to make a plan, _do not mark the issue as done_. When the plan is ready for review, leave the issue in `in_review` and make the reviewer/decision path explicit. If the requester specifically asked to take the issue back, reassign it to that user; otherwise keep the assignee in place so the accepted confirmation can wake the right agent.
-
-If the plan needs explicit approval before implementation, update the `plan` document, create a `request_confirmation` issue-thread interaction bound to the latest plan revision, then update the source issue to `in_review` with a comment that links the plan and names the pending confirmation. This is a deliberate waiting path, not an abandoned productive run. Wait for acceptance before creating implementation subtasks. See `references/api-reference.md` for the interaction payload.
-
-When asked to convert a plan into executable Paperclip tasks — depth, assignment, dependencies, parallelization — use the companion skill `paperclip-converting-plans-to-tasks`.
-
-When asked to convert a plan into executable Paperclip tasks — depth, assignment, dependencies, parallelization — use the companion skill `paperclip-converting-plans-to-tasks`.
-
-Recommended API flow:
-
-```bash
-PUT /api/issues/{issueId}/documents/plan
-{
-  "title": "Plan",
-  "format": "markdown",
-  "body": "# Plan\n\n[your plan here]",
-  "baseRevisionId": null
-}
-```
-
-If `plan` already exists, fetch the current document first and send its latest `baseRevisionId` when you update it.
+Link plan documents in comments as: `/<prefix>/issues/<id>#document-plan`
 
 ## Key Endpoints (Hot Routes)
 

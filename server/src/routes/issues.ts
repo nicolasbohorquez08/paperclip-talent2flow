@@ -8000,6 +8000,7 @@ export function issueRoutes(
             },
           });
         } else {
+          const supersededInteraction = expiredInteractions.length > 0 ? expiredInteractions[0] : null;
           addWakeup(assigneeId, {
             source: "automation",
             triggerDetail: "system",
@@ -8008,6 +8009,7 @@ export function issueRoutes(
               issueId: currentIssue.id,
               commentId: comment.id,
               mutation: "comment",
+              ...(supersededInteraction ? { interactionId: supersededInteraction.id, interactionKind: supersededInteraction.kind, interactionStatus: supersededInteraction.status } : {}),
               ...(resumeRequested === true ? { resumeIntent: true, followUpRequested: true } : {}),
               ...(interruptedRunId ? { interruptedRunId } : {}),
             },
@@ -8020,6 +8022,7 @@ export function issueRoutes(
               wakeCommentId: comment.id,
               source: "issue.comment",
               wakeReason: "issue_commented",
+              ...(supersededInteraction ? { interactionId: supersededInteraction.id, interactionKind: supersededInteraction.kind, interactionStatus: supersededInteraction.status } : {}),
               ...(resumeRequested === true ? { resumeIntent: true, followUpRequested: true } : {}),
               ...(interruptedRunId ? { interruptedRunId } : {}),
             },
