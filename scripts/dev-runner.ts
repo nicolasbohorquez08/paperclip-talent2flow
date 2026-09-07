@@ -15,6 +15,23 @@ import {
   touchLocalServiceRegistryRecord,
   writeLocalServiceRegistryRecord,
 } from "../server/src/services/local-service-supervisor.ts";
+import { readFileSync } from "node:fs";
+
+// Load .env from repo root so dev-runner picks up environment settings like PAPERCLIP_DEPLOYMENT_MODE
+const rootEnvPath = path.join(repoRoot, ".env");
+if (existsSync(rootEnvPath)) {
+  for (const rawLine of readFileSync(rootEnvPath, "utf8").split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const match = rawLine.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+    if (!match) continue;
+    const [, key, rawVal] = match;
+    const cleanVal = rawVal.trim().replace(/^['"](.*)['"]$/, "$1");
+    if (process.env[key] === undefined) {
+      process.env[key] = cleanVal;
+    }
+  }
+}
 
 // Keep these values local so the dev runner can boot from the server package's
 // tsx context without requiring workspace package resolution first.
@@ -173,6 +190,11 @@ if (tailscaleAuth || bindMode) {
       `[paperclip] dev mode: authenticated/private (bind=${effectiveBind}${bindHost ? `:${bindHost}` : ""})`,
     );
   }
+} else if (process.env.PAPERCLIP_DEPLOYMENT_MODE === "authenticated") {
+  env.PAPERCLIP_DEPLOYMENT_MODE = "authenticated";
+  env.PAPERCLIP_DEPLOYMENT_EXPOSURE = process.env.PAPERCLIP_DEPLOYMENT_EXPOSURE ?? "private";
+  env.PAPERCLIP_AUTH_BASE_URL_MODE = process.env.PAPERCLIP_AUTH_BASE_URL_MODE ?? "auto";
+  console.log("[paperclip] dev mode: authenticated/private (from env)");
 } else {
   delete env.PAPERCLIP_BIND;
   delete env.PAPERCLIP_BIND_HOST;
