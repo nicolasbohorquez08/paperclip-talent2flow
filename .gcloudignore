@@ -1,0 +1,32 @@
+.gcloudignore
+.git
+.github
+.paperclip
+.pnpm-store
+node_modules
+dist
+coverage
+data
+tmp
+*.log
+.env
+.env.*
+!.env.example
+.vscode
+.idea
+
+# --- Agregado tras revisión del 8-sep: tooling de desarrollo, no usado en
+# runtime (confirmar con el grep de abajo antes de confiar a ciegas) ---
+.agents
+.claude
+docs
+screenshots
+report
+releases
+adapter-plugin.md
+DEV_SETUP_GUIDE.md
+SECURITY.md
+CONTRIBUTING.md
+
+# NO EXCLUIR: skills/ (raíz, sin punto) — Paperclip lo lee en runtime,
+# confirmado por logs reales (/app/skills/paperclip, /app/skills/paperclip-board)

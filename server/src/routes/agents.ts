@@ -258,7 +258,7 @@ export function agentRoutes(
     fallbackChecks: AdapterEnvironmentCheck[];
     release: (status?: "released" | "failed") => Promise<void>;
   }> {
-    const noopRelease = async () => {};
+    const noopRelease = async () => { };
 
     if (!input.environmentId) {
       return {
@@ -586,30 +586,30 @@ export function agentRoutes(
     }
     const run = req.actor.type === "agent" && req.actor.runId
       ? await db
-          .select({
-            companyId: heartbeatRuns.companyId,
-            agentId: heartbeatRuns.agentId,
-            contextSnapshot: heartbeatRuns.contextSnapshot,
-          })
-          .from(heartbeatRuns)
-          .where(and(eq(heartbeatRuns.id, req.actor.runId), eq(heartbeatRuns.companyId, agent.companyId)))
-          .then((rows) => rows[0] ?? null)
+        .select({
+          companyId: heartbeatRuns.companyId,
+          agentId: heartbeatRuns.agentId,
+          contextSnapshot: heartbeatRuns.contextSnapshot,
+        })
+        .from(heartbeatRuns)
+        .where(and(eq(heartbeatRuns.id, req.actor.runId), eq(heartbeatRuns.companyId, agent.companyId)))
+        .then((rows) => rows[0] ?? null)
       : null;
     const runContext = run?.agentId === agent.id ? readObject(run.contextSnapshot) : null;
     const runExecutionPolicy = readObject(runContext?.executionPolicy);
     const runIssueId = readRunIssueId(runContext);
     const runScopedIssue = runIssueId
       ? await db
-          .select({
-            companyId: issuesTable.companyId,
-            projectId: issuesTable.projectId,
-            executionPolicy: issuesTable.executionPolicy,
-            projectExecutionWorkspacePolicy: projectsTable.executionWorkspacePolicy,
-          })
-          .from(issuesTable)
-          .leftJoin(projectsTable, and(eq(projectsTable.id, issuesTable.projectId), eq(projectsTable.companyId, issuesTable.companyId)))
-          .where(and(eq(issuesTable.id, runIssueId), eq(issuesTable.companyId, agent.companyId)))
-          .then((rows) => rows[0] ?? null)
+        .select({
+          companyId: issuesTable.companyId,
+          projectId: issuesTable.projectId,
+          executionPolicy: issuesTable.executionPolicy,
+          projectExecutionWorkspacePolicy: projectsTable.executionWorkspacePolicy,
+        })
+        .from(issuesTable)
+        .leftJoin(projectsTable, and(eq(projectsTable.id, issuesTable.projectId), eq(projectsTable.companyId, issuesTable.companyId)))
+        .where(and(eq(issuesTable.id, runIssueId), eq(issuesTable.companyId, agent.companyId)))
+        .then((rows) => rows[0] ?? null)
       : null;
 
     return resolveCoreTrustPreset({
@@ -617,15 +617,15 @@ export function agentRoutes(
       agent,
       project: runScopedIssue?.projectId
         ? {
-            companyId: runScopedIssue.companyId,
-            executionWorkspacePolicy: runScopedIssue.projectExecutionWorkspacePolicy,
-          }
+          companyId: runScopedIssue.companyId,
+          executionWorkspacePolicy: runScopedIssue.projectExecutionWorkspacePolicy,
+        }
         : null,
       issue: runScopedIssue
         ? {
-            companyId: runScopedIssue.companyId,
-            executionPolicy: runScopedIssue.executionPolicy,
-          }
+          companyId: runScopedIssue.companyId,
+          executionPolicy: runScopedIssue.executionPolicy,
+        }
         : null,
       run: runExecutionPolicy ? { companyId: agent.companyId, executionPolicy: runExecutionPolicy } : null,
     });
@@ -1412,21 +1412,6 @@ export function agentRoutes(
     return Array.from(out.values());
   }
 
-  function normalizeDesiredSkillSelections(
-    requestedDesiredSkills: Array<string | AgentDesiredSkillEntry> | undefined,
-  ): AgentDesiredSkillEntry[] | undefined {
-    if (!requestedDesiredSkills) return undefined;
-    const out = new Map<string, AgentDesiredSkillEntry>();
-    for (const value of requestedDesiredSkills) {
-      const entry = typeof value === "string"
-        ? { key: value.trim(), versionId: null }
-        : { key: value.key.trim(), versionId: value.versionId ?? null };
-      if (!entry.key || out.has(entry.key)) continue;
-      out.set(entry.key, entry);
-    }
-    return Array.from(out.values());
-  }
-
   // Legacy hardcoded set — used as fallback when adapter module does not
   // declare requiresMaterializedRuntimeSkills explicitly.
   const LEGACY_MATERIALIZED_SKILLS_SET = new Set([
@@ -1737,7 +1722,7 @@ export function agentRoutes(
       config: runtimeSkillConfig,
     });
     console.log("snapshot", snapshot);
-    res.json({...snapshot, capacityPercent: computeSkillCapacityPercent(snapshot.entries)});
+    res.json({ ...snapshot, capacityPercent: computeSkillCapacityPercent(snapshot.entries) });
   });
 
   router.post(
@@ -1793,18 +1778,18 @@ export function agentRoutes(
       };
       const snapshot = adapter?.syncSkills
         ? await adapter.syncSkills({
+          agentId: updated.id,
+          companyId: updated.companyId,
+          adapterType: updated.adapterType,
+          config: runtimeSkillConfig,
+        }, desiredSkills)
+        : adapter?.listSkills
+          ? await adapter.listSkills({
             agentId: updated.id,
             companyId: updated.companyId,
             adapterType: updated.adapterType,
             config: runtimeSkillConfig,
-          }, desiredSkills)
-        : adapter?.listSkills
-          ? await adapter.listSkills({
-              agentId: updated.id,
-              companyId: updated.companyId,
-              adapterType: updated.adapterType,
-              config: runtimeSkillConfig,
-            })
+          })
           : buildUnsupportedSkillSnapshot(updated.adapterType, desiredSkillEntries);
 
       await logActivity(db, {

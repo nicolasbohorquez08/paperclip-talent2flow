@@ -1,0 +1,27 @@
+steps:
+  - id: 'build-image'
+    name: 'gcr.io/cloud-builders/docker'
+    env:
+      - 'DOCKER_BUILDKIT=1'
+    args:
+      - 'build'
+      - '-t'
+      - '$_IMAGE_NAME:$_TAG'
+      - '-t'
+      - '$_IMAGE_NAME:latest'
+      - '-f'
+      - 'Dockerfile'
+      - '.'
+
+images:
+  - '$_IMAGE_NAME:$_TAG'
+  - '$_IMAGE_NAME:latest'
+
+substitutions:
+  _IMAGE_NAME: 'us-east1-docker.pkg.dev/csa-talent2flow-dev/talent2flow/paperclip'
+  _TAG: 'latest'
+
+timeout: 1800s
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
